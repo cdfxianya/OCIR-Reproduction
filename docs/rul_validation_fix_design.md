@@ -596,6 +596,7 @@ def evaluate_test_terminal(
     output_dir=None,
     method: str = "ocir",
     write_files: bool = True,
+    access_approval=None,
 ) -> dict:
     ...
 ```
@@ -625,6 +626,7 @@ metrics_payload: dict
 不得在 train() 中调用
 不得在 __call__() 中自动调用
 只有实验进入最终报告阶段时才允许人工显式调用
+必须先校验 G4 access_approval，未授权时不得访问 self.testing_data
 必须按 final_evaluation_views_v1 同时输出 provided_rul_eval_v1 与 capped_target_eval_v1
 ```
 

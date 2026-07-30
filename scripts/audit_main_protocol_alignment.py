@@ -255,6 +255,7 @@ def audit_static(repo: Path, checks: list[Check]) -> None:
         final_eval_methods = (
             "get_loader_metadata",
             "validate_test_terminal_metadata",
+            "validate_official_test_access_approval",
             "build_final_prediction_rows",
             "compute_final_view_metrics",
             "build_final_metrics_payload",
@@ -327,7 +328,7 @@ def audit_static(repo: Path, checks: list[Check]) -> None:
             "copy_standard_checkpoint": "def copy_standard_checkpoint",
             "collect_git_info": "def collect_git_info",
             "collect_runtime_info": "def collect_runtime_info",
-            "final evaluation call": "evaluate_test_terminal(output_dir=",
+            "final evaluation call": "evaluate_test_terminal",
             "final test access record": "record_final_test_access(",
             "config.yaml": "config.yaml",
             "runtime.json": "runtime.json",
@@ -336,6 +337,10 @@ def audit_static(repo: Path, checks: list[Check]) -> None:
             "runner_summary.json": "runner_summary.json",
             "runner_summary.csv": "runner_summary.csv",
             "dry-run": "--dry-run",
+            "official test gate": "--allow-official-test",
+            "G4 approval id": "--g4-approval-id",
+            "G4 approved by": "--g4-approved-by",
+            "approval builder": "def build_official_test_access_approval",
         }
         missing_runner_terms = [name for name, term in required_runner_terms.items() if term not in content]
         add(

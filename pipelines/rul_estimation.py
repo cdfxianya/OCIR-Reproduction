@@ -39,6 +39,8 @@ FINAL_PREDICTION_COLUMNS = [
     "preprocessing_version",
 ]
 
+FINAL_TEST_ACCESS_REASON = "final_evaluation_after_training_and_best_checkpoint_restore"
+
 class RulPipeline(solver_base.Solver):
     def __init__(self, config, 
                  logger,
@@ -466,7 +468,30 @@ class RulPipeline(solver_base.Solver):
             json.dump(metrics_payload, handle, ensure_ascii=False, indent=2)
             handle.write("\n")
 
-    def evaluate_test_terminal(self, output_dir=None, method="ocir", write_files=True):
+    def validate_official_test_access_approval(self, access_approval):
+        if not isinstance(access_approval, dict):
+            raise PermissionError("official test access requires a G4 approval payload")
+
+        required_fields = {
+            "policy": "approved",
+            "reason": FINAL_TEST_ACCESS_REASON,
+            "protocol": MAIN_PROTOCOL_V1["version"],
+            "method": "ocir",
+        }
+        for field, expected in required_fields.items():
+            actual = access_approval.get(field)
+            if actual != expected:
+                raise PermissionError(
+                    f"official test access approval field {field!r} must be {expected!r}, got {actual!r}"
+                )
+
+        for field in ("approval_id", "approved_by"):
+            value = access_approval.get(field)
+            if not isinstance(value, str) or not value.strip():
+                raise PermissionError(f"official test access approval requires non-empty {field}")
+
+    def evaluate_test_terminal(self, output_dir=None, method="ocir", write_files=True, access_approval=None):
+        self.validate_official_test_access_approval(access_approval)
         if self.testing_data is None:
             raise ValueError("self.testing_data is required for official test terminal evaluation")
 

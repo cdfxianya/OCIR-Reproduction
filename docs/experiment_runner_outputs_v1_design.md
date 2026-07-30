@@ -628,17 +628,31 @@ self.full_test_set
 evaluate_test_terminal()
 ```
 
-### 14.1 final test access log 边界
+### 14.1 G4 approval gate
 
-因为本 runner 的完整输出要求包含 `metrics.json` 和 `predictions.csv`，而这两个文件来自 official test terminal evaluation，所以本任务必须实现最小 final test access log。
+因为本 runner 的完整输出要求包含 `metrics.json` 和 `predictions.csv`，而这两个文件来自 official test terminal evaluation，所以 official test 默认必须处于 sealed 状态。
 
-最小实现只做一件事：
+非 dry-run 运行必须显式提供：
 
 ```text
-在调用 evaluate_test_terminal() 前，向 reports/test_access_log.md 追加一条访问记录
+--allow-official-test
+--g4-approval-id
+--g4-approved-by
 ```
 
-不实现更复杂的 G4 审批流程，不实现用户确认交互，不实现测试集解封状态机。
+可选提供：
+
+```text
+--g4-approval-note
+```
+
+如果没有提供完整 G4 approval 参数，runner 必须在创建实验目录、训练模型或读取 processed data 之前失败。
+
+`--dry-run` 不需要 G4 approval，因为 dry-run 不创建实验目录、不实例化 pipeline、不读取 processed data、不访问 official test。
+
+### 14.2 final test access log
+
+在调用 `evaluate_test_terminal()` 前，runner 必须向 `reports/test_access_log.md` 追加一条访问记录。
 
 访问记录最低字段：
 
@@ -649,11 +663,15 @@ dataset
 model_seed
 method
 protocol
+approval_stage
+approval_id
+approved_by
 reason
 caller
 output_dir
 git_commit
 git_dirty
+approval_note
 ```
 
 `reason` 固定为：
@@ -1216,6 +1234,7 @@ def record_final_test_access(
     model_seed: int,
     git_info: dict,
     output_dir: pathlib.Path,
+    access_approval: dict,
 ) -> pathlib.Path:
     ...
 ```
@@ -1235,7 +1254,7 @@ pathlib.Path，指向 reports/test_access_log.md
 目的：
 
 ```text
-在 official test final evaluation 前追加最小访问审计记录。
+在 official test final evaluation 前追加 G4 approval 审计记录。
 ```
 
 #### `validate_experiment_outputs`
@@ -1369,7 +1388,7 @@ audit 不需要运行真实训练。
 输出目录
 Git commit 记录
 硬件/时间审计 的记录机制部分
-Final test access log 的最小 runner 访问记录部分
+Final test access log 与 G4 approval gate
 ```
 
 不得因为本任务把以下项标为 checked：
@@ -1523,7 +1542,7 @@ docs/main_protocol_v1_data_contract.md 无 diff
 5. 实现单实验 pipeline 调用，但先不要跑真实数据
 6. 实现 checkpoint 复制
 7. 实现 train_log 规整
-8. 实现 final test access 最小记录
+8. 实现 final test access G4 approval gate 和访问记录
 9. 实现 metrics.json 元数据合并和输出校验
 10. 新增 scripts/smoke_experiment_runner_outputs.py
 11. 更新 audit 静态检查
@@ -1549,4 +1568,4 @@ display math 如需使用，必须用独立行 $$
 
 无必须确认问题。
 
-本文档已明确：为了让完整 runner 生成 `metrics.json` 和 `predictions.csv`，实现必须在 final evaluation 前写入最小 `reports/test_access_log.md` 记录。该记录只负责审计，不实现额外审批流程。
+本文档已明确：为了让完整 runner 生成 `metrics.json` 和 `predictions.csv`，实现必须在 final evaluation 前验证 G4 approval 并写入 `reports/test_access_log.md` 记录。

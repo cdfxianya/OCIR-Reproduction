@@ -31,7 +31,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from ocir_reproduction.protocols import MAIN_PROTOCOL_V1
 from pipelines import RlPipeline, RulPipeline
-from pipelines.rul_estimation import FINAL_PREDICTION_COLUMNS
+from pipelines.rul_estimation import FINAL_PREDICTION_COLUMNS, FINAL_TEST_ACCESS_REASON
 
 
 METHOD = "ocir"
@@ -96,6 +96,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--batch", type=int, default=128)
     parser.add_argument("--fail-fast", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--allow-official-test", action="store_true")
+    parser.add_argument("--g4-approval-id", default=None)
+    parser.add_argument("--g4-approved-by", default=None)
+    parser.add_argument("--g4-approval-note", default="")
     return parser.parse_args(argv)
 
 
@@ -192,6 +196,31 @@ def collect_git_info(repo_root: pathlib.Path) -> dict[str, Any]:
     }
 
 
+def build_official_test_access_approval(args: argparse.Namespace) -> dict[str, Any] | None:
+    if getattr(args, "dry_run", False):
+        return None
+    if not getattr(args, "allow_official_test", False):
+        raise PermissionError(
+            "official test is sealed; pass --allow-official-test with --g4-approval-id and --g4-approved-by"
+        )
+    approval_id = getattr(args, "g4_approval_id", None)
+    approved_by = getattr(args, "g4_approved_by", None)
+    if not isinstance(approval_id, str) or not approval_id.strip():
+        raise PermissionError("--g4-approval-id is required when --allow-official-test is set")
+    if not isinstance(approved_by, str) or not approved_by.strip():
+        raise PermissionError("--g4-approved-by is required when --allow-official-test is set")
+    return {
+        "policy": "approved",
+        "approval_stage": "G4",
+        "approval_id": approval_id.strip(),
+        "approved_by": approved_by.strip(),
+        "approval_note": str(getattr(args, "g4_approval_note", "") or ""),
+        "reason": FINAL_TEST_ACCESS_REASON,
+        "protocol": PROTOCOL_VERSION,
+        "method": METHOD,
+    }
+
+
 def build_exp_id(
     dataset: str,
     model_seed: int,
@@ -254,6 +283,7 @@ def make_experiment_config(
     paths: dict[str, pathlib.Path],
     git_info: dict[str, Any],
     argv: list[str],
+    access_approval: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     run_config = make_run_config(base_config, dataset, model_seed, paths)
     return {
@@ -297,6 +327,13 @@ def make_experiment_config(
             "c_type": run_config["c_type"],
         },
         "git": git_info,
+        "official_test_access": {
+            "policy": "sealed" if access_approval is None else access_approval["policy"],
+            "approval_stage": None if access_approval is None else access_approval["approval_stage"],
+            "approval_id": None if access_approval is None else access_approval["approval_id"],
+            "approved_by": None if access_approval is None else access_approval["approved_by"],
+            "reason": None if access_approval is None else access_approval["reason"],
+        },
         "command": {"argv": argv},
     }
 
@@ -444,6 +481,7 @@ def record_final_test_access(
     model_seed: int,
     git_info: dict[str, Any],
     output_dir: pathlib.Path,
+    access_approval: dict[str, Any],
 ) -> pathlib.Path:
     reports_dir = repo_root / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
@@ -451,8 +489,8 @@ def record_final_test_access(
     if not access_log_path.exists():
         access_log_path.write_text(
             "# Final Test Access Log\n\n"
-            "| timestamp_utc | exp_id | dataset | model_seed | method | protocol | reason | caller | output_dir | git_commit | git_dirty |\n"
-            "|---|---|---|---:|---|---|---|---|---|---|---|\n",
+            "| timestamp_utc | exp_id | dataset | model_seed | method | protocol | approval_stage | approval_id | approved_by | reason | caller | output_dir | git_commit | git_dirty | approval_note |\n"
+            "|---|---|---|---:|---|---|---|---|---|---|---|---|---|---|---|\n",
             encoding="utf-8",
         )
 
@@ -463,11 +501,15 @@ def record_final_test_access(
         str(int(model_seed)),
         METHOD,
         PROTOCOL_VERSION,
-        "final_evaluation_after_training_and_best_checkpoint_restore",
+        str(access_approval["approval_stage"]),
+        str(access_approval["approval_id"]),
+        str(access_approval["approved_by"]),
+        str(access_approval["reason"]),
         pathlib.Path(__file__).name,
         str(output_dir),
         str(git_info.get("commit")),
         str(git_info.get("dirty")),
+        str(access_approval.get("approval_note", "")),
     ]
     with access_log_path.open("a", encoding="utf-8", newline="") as handle:
         handle.write("| " + " | ".join(item.replace("|", "\\|") for item in row) + " |\n")
@@ -619,6 +661,7 @@ def run_single_experiment(
     results_root: pathlib.Path,
     git_info: dict[str, Any],
     argv: list[str],
+    access_approval: dict[str, Any] | None = None,
     dry_run: bool = False,
 ) -> dict[str, Any]:
     timestamp = utc_now()
@@ -639,6 +682,8 @@ def run_single_experiment(
     }
     if dry_run:
         return summary
+    if access_approval is None:
+        raise PermissionError("non-dry-run experiments require official test G4 access approval")
 
     start_monotonic = time.monotonic()
     paths: dict[str, pathlib.Path] | None = None
@@ -647,7 +692,16 @@ def run_single_experiment(
     config_payload: dict[str, Any] | None = None
     try:
         paths = setup_experiment_dirs(results_root, exp_id)
-        config_payload = make_experiment_config(base_config, dataset, model_seed, exp_id, paths, git_info, argv)
+        config_payload = make_experiment_config(
+            base_config,
+            dataset,
+            model_seed,
+            exp_id,
+            paths,
+            git_info,
+            argv,
+            access_approval=access_approval,
+        )
         write_yaml(paths["exp_dir"] / "config.yaml", config_payload)
         runtime_payload = collect_runtime_info(
             exp_id=exp_id,
@@ -674,8 +728,13 @@ def run_single_experiment(
         rul_pipeline()
 
         copy_standard_checkpoint(paths)
-        record_final_test_access(REPO_ROOT, exp_id, dataset, model_seed, git_info, paths["exp_dir"])
-        rul_pipeline.evaluate_test_terminal(output_dir=paths["exp_dir"], method=METHOD, write_files=True)
+        record_final_test_access(REPO_ROOT, exp_id, dataset, model_seed, git_info, paths["exp_dir"], access_approval)
+        rul_pipeline.evaluate_test_terminal(
+            output_dir=paths["exp_dir"],
+            method=METHOD,
+            write_files=True,
+            access_approval=access_approval,
+        )
         normalize_train_logs(paths)
 
         ended_at = format_iso_utc(utc_now())
@@ -752,6 +811,7 @@ def write_runner_summary(results_root: pathlib.Path, rows: list[dict[str, Any]])
 def run_experiment_grid(args: argparse.Namespace) -> int:
     base_config = build_base_config(args)
     git_info = collect_git_info(REPO_ROOT)
+    access_approval = build_official_test_access_approval(args)
     results_root = pathlib.Path(args.results_root)
     if not results_root.is_absolute():
         results_root = REPO_ROOT / results_root
@@ -765,6 +825,7 @@ def run_experiment_grid(args: argparse.Namespace) -> int:
             results_root=results_root,
             git_info=git_info,
             argv=[sys.executable, "-B", *sys.argv],
+            access_approval=access_approval,
             dry_run=bool(args.dry_run),
         )
         rows.append(row)

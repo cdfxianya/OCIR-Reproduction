@@ -21,6 +21,7 @@ from scripts.run_main_protocol_experiments import (
     TRAIN_LOG_COLUMNS,
     build_base_config,
     build_exp_id,
+    build_official_test_access_approval,
     collect_runtime_info,
     copy_standard_checkpoint,
     expand_experiment_grid,
@@ -162,7 +163,23 @@ def main() -> int:
         batch=128,
         fail_fast=False,
         dry_run=False,
+        allow_official_test=True,
+        g4_approval_id="G4-SMOKE-001",
+        g4_approved_by="smoke-test",
+        g4_approval_note="synthetic smoke only",
     )
+    sealed_args = argparse.Namespace(**{**vars(args), "allow_official_test": False})
+    try:
+        build_official_test_access_approval(sealed_args)
+    except PermissionError:
+        pass
+    else:
+        raise AssertionError("non-dry-run official test access must require explicit G4 approval")
+    dry_args = argparse.Namespace(**{**vars(args), "dry_run": True, "allow_official_test": False})
+    assert_true(build_official_test_access_approval(dry_args) is None, "dry-run must not require official test approval")
+    access_approval = build_official_test_access_approval(args)
+    assert_true(access_approval["approval_id"] == "G4-SMOKE-001", "approval id mismatch")
+
     grid = expand_experiment_grid(args)
     assert_true(len(grid) == 20, "default grid must contain 20 experiments")
     assert_true([item["dataset"] for item in grid[:5]] == ["FD001"] * 5, "dataset-major grid order failed")
@@ -194,6 +211,7 @@ def main() -> int:
         paths=paths,
         git_info=git_info,
         argv=["python", "-B", "scripts/run_main_protocol_experiments.py"],
+        access_approval=access_approval,
     )
     write_yaml(paths["exp_dir"] / "config.yaml", config_payload)
     (paths["logs_dir"] / "log_all.txt").write_text("fake log\n", encoding="utf-8")

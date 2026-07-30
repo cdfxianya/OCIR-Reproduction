@@ -708,6 +708,7 @@ def evaluate_test_terminal(
     output_dir=None,
     method: str = "ocir",
     write_files: bool = True,
+    access_approval=None,
 ) -> dict:
     ...
 ```
@@ -751,15 +752,16 @@ capped_target_eval_v1
 实现流程必须为：
 
 ```text
-1. 确认 self.testing_data 不是 None
-2. raw_pred, _ = self.predict_loader(self.testing_data)
-3. metadata = self.get_loader_metadata(self.testing_data)
-4. self.validate_test_terminal_metadata(metadata, raw_pred.shape[0])
-5. rows = self.build_final_prediction_rows(raw_pred, metadata, method=method)
-6. metrics_payload = self.build_final_metrics_payload(rows, method=method)
-7. 如果 write_files=True，则确定 output_dir 并调用 write_final_evaluation_outputs
-8. logger 记录两个 views 的 RMSE、MAE、NASA Score
-9. 返回 metrics_payload
+1. 调用 self.validate_official_test_access_approval(access_approval)
+2. 确认 self.testing_data 不是 None
+3. raw_pred, _ = self.predict_loader(self.testing_data)
+4. metadata = self.get_loader_metadata(self.testing_data)
+5. self.validate_test_terminal_metadata(metadata, raw_pred.shape[0])
+6. rows = self.build_final_prediction_rows(raw_pred, metadata, method=method)
+7. metrics_payload = self.build_final_metrics_payload(rows, method=method)
+8. 如果 write_files=True，则确定 output_dir 并调用 write_final_evaluation_outputs
+9. logger 记录两个 views 的 RMSE、MAE、NASA Score
+10. 返回 metrics_payload
 ```
 
 `output_dir` 规则：
@@ -779,6 +781,7 @@ evaluate_test_terminal 不得访问 self.val_data
 evaluate_test_terminal 不得执行训练
 evaluate_test_terminal 不得修改 checkpoint
 evaluate_test_terminal 不得根据 metrics 更新 best checkpoint
+evaluate_test_terminal 未收到 G4 approval payload 时必须在访问 self.testing_data 前抛出 PermissionError
 ```
 
 ### 9.2 修改 `compute_rul_metrics`
