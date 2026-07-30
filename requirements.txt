@@ -1,0 +1,31 @@
+# Python 3.9 is required for this reproduction environment.
+#
+# Install inside an already-created conda env:
+#   conda create -p H:\Conda\envs\ocir-repro python=3.9 pip
+#   conda activate H:\Conda\envs\ocir-repro
+#   pip install -r requirements.txt
+
+--extra-index-url https://download.pytorch.org/whl/cu121
+
+torch==2.4.0+cu121
+torchvision==0.19.0+cu121
+torchaudio==2.4.0+cu121
+
+numpy==1.26.4
+pandas==2.2.3
+scipy==1.12.0
+scikit-learn==1.6.1
+matplotlib==3.9.2
+seaborn==0.13.2
+statsmodels==0.14.4
+tqdm==4.67.1
+PyYAML==6.0.2
+
+fvcore==0.1.5.post20221221
+iopath==0.1.10
+gpustat==1.1.1
+nvidia-ml-py==12.575.51
+psutil==7.0.0
+tabulate==0.9.0
+termcolor==3.0.0
+yacs==0.1.8

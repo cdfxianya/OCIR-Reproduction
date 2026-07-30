@@ -1,0 +1,8 @@
+ocir_protocol_alignment_checklist.md
+.obsidian/
+.idea/
+__pycache__/
+*.pyc
+Logss/
+results/
+data/processed/
